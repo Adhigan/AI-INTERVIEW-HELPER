@@ -1,0 +1,41 @@
+name: Deploy AI Interview Helper Backend
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+
+      - name: Install backend dependencies
+        working-directory: Backend
+        run: npm install
+
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          client-id: 08e2bb16-e1ba-4933-b0b1-d7d174277939
+          tenant-id: 29bebd42-f1ff-4c3d-9688-067e3460dc1f
+          subscription-id: fefc9a7a-1216-4050-a3e6-83d6e45c0aab
+
+      - name: Deploy Backend to Azure
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: adithyan-ai-interview-helper
+          package: ./Backend
