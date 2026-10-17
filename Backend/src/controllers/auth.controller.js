@@ -119,19 +119,28 @@ res.cookie("token", token, {
  * @description clear token from user cookie and add the token in blacklist
  * @access public
  */
+
 async function logoutUserController(req, res) {
-    const token = req.cookies.token
+    const token = req.cookies?.token;
 
     if (token) {
-        await tokenBlacklistModel.create({ token })
+        await tokenBlacklistModel.create({ token });
     }
 
-    res.clearCookie("token")
+    const isProduction = process.env.NODE_ENV === "production";
 
-    res.status(200).json({
+    res.clearCookie("token", {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: isProduction ? "none" : "lax",
+        path: "/"
+    });
+
+    return res.status(200).json({
         message: "User logged out successfully"
-    })
+    });
 }
+
 
 /**
  * @name getMeController
