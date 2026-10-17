@@ -35,8 +35,18 @@ interviewRouter.get("/", authMiddleware.authUser, interviewController.getAllInte
  * @description generate resume pdf on the basis of user self description, resume content and job description.
  * @access private
  */
-interviewRouter.post("/resume/pdf/:interviewReportId", authMiddleware.authUser, interviewController.generateResumePdfController)
 
+interviewRouter.post(
+    "/resume/pdf/:interviewReportId",
+    authMiddleware.authUser,
+    interviewController.generateResumePdfController
+);
 
+// Download the original resume from Azure Blob Storage
+interviewRouter.get(
+    "/resume/original/:interviewReportId",
+    authMiddleware.authUser,
+    interviewController.downloadOriginalResumeController
+);
 
-module.exports = interviewRouter
+module.exports = interviewRouter;

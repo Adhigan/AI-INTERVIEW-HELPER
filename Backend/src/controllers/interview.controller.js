@@ -1,52 +1,162 @@
 const pdfParse = require("pdf-parse")
 const { generateInterviewReport, generateResumePdf } = require("../services/ai.service")
 const interviewReportModel = require("../models/interviewReport.model")
+const {
+    uploadResume,
+    deleteResume
+} = require("../config/azureStorage");
+const {
+    downloadResumeBuffer
+} = require("../config/azureStorage");
 
 
+
+async function downloadOriginalResumeController(req, res) {
+    try {
+        const { interviewReportId } = req.params;
+
+        // Only find reports owned by the logged-in user.
+        const report = await interviewReportModel.findOne({
+            _id: interviewReportId,
+            user: req.user.id
+        });
+
+        if (!report) {
+            return res.status(404).json({
+                message: "Interview report not found."
+            });
+        }
+
+        if (!report.resumeBlobName) {
+            return res.status(404).json({
+                message: "No original resume is stored for this report."
+            });
+        }
+
+        const pdfBuffer = await downloadResumeBuffer(
+            report.resumeBlobName
+        );
+
+        const filename = (
+            report.resumeOriginalName || "resume.pdf"
+        ).replace(/["\r\n]/g, "_");
+
+        res.set({
+            "Content-Type": "application/pdf",
+            "Content-Disposition":
+                `attachment; filename="${filename}"`,
+            "Content-Length": pdfBuffer.length,
+            "Cache-Control": "private, no-store"
+        });
+
+        return res.status(200).send(pdfBuffer);
+    } catch (error) {
+        console.error("Original resume download failed:", error.message);
+
+        return res.status(500).json({
+            message: "Failed to download the original resume."
+        });
+    }
+}
 
 
 /**
  * @description Controller to generate interview report based on user self description, resume and job description.
  */
+
 async function generateInterViewReportController(req, res) {
+    let blobName = null;
 
-console.log("========== REQUEST ==========");
-    console.log("Headers:", req.headers["content-type"]);
-    console.log("Body:", req.body);
-    console.log("File:", req.file);
+    try {
+        if (!req.file) {
+            return res.status(400).json({
+                message: "No resume file received."
+            });
+        }
 
-    if (!req.file) {
-        return res.status(400).json({
-            message: "No resume file received."
+        // Verify the PDF file signature.
+        if (
+            req.file.buffer.subarray(0, 5).toString() !== "%PDF-"
+        ) {
+            return res.status(400).json({
+                message: "The uploaded file is not a valid PDF."
+            });
+        }
+
+        const { selfDescription, jobDescription } = req.body;
+
+if (!jobDescription?.trim()) {
+    return res.status(400).json({
+        message: "Job description is required."
+    });
+}
+
+if (!req.file && !selfDescription?.trim()) {
+    return res.status(400).json({
+        message: "Please upload a resume or enter your self-description."
+    });
+}
+
+        // 1. Store the original PDF in Azure Blob Storage.
+        blobName = await uploadResume(
+            req.file.buffer,
+            req.file.originalname
+        );
+
+        // 2. Extract the PDF text using the existing logic.
+        const resumeContent = await (
+            new pdfParse.PDFParse(
+                Uint8Array.from(req.file.buffer)
+            )
+        ).getText();
+
+        // 3. Keep the existing Gemini workflow unchanged.
+        const interViewReportByAi = await generateInterviewReport({
+            resume: resumeContent.text,
+            selfDescription,
+            jobDescription
+        });
+
+        // 4. Save report data and Azure file metadata in MongoDB.
+        const interviewReport = await interviewReportModel.create({
+            user: req.user.id,
+            resume: resumeContent.text,
+            resumeBlobName: blobName,
+            resumeOriginalName: req.file.originalname,
+            selfDescription,
+            jobDescription,
+            ...interViewReportByAi
+        });
+
+        return res.status(201).json({
+            message: "Interview report generated successfully.",
+            interviewReport
+        });
+
+    } catch (error) {
+        console.error(
+            "Interview report generation failed:",
+            error.message
+        );
+
+        // Clean up the uploaded PDF if processing or saving fails.
+        if (blobName) {
+            try {
+                await deleteResume(blobName);
+            } catch (cleanupError) {
+                console.error(
+                    "Azure blob cleanup failed:",
+                    cleanupError.message
+                );
+            }
+        }
+
+        return res.status(500).json({
+            message: "Failed to generate interview report."
         });
     }
-
-    // ...
-
-    const resumeContent = await (new pdfParse.PDFParse(Uint8Array.from(req.file.buffer))).getText()
-    const { selfDescription, jobDescription } = req.body
-
-    const interViewReportByAi = await generateInterviewReport({
-        resume: resumeContent.text,
-        selfDescription,
-        jobDescription
-    })
-console.log(interViewReportByAi);
-
-    const interviewReport = await interviewReportModel.create({
-        user: req.user.id,
-        resume: resumeContent.text,
-        selfDescription,
-        jobDescription,
-        ...interViewReportByAi
-    })
-
-    res.status(201).json({
-        message: "Interview report generated successfully.",
-        interviewReport
-    })
-
 }
+
 
 /**
  * @description Controller to get interview report by interviewId.
@@ -109,4 +219,4 @@ async function generateResumePdfController(req, res) {
     res.send(pdfBuffer)
 }
 
-module.exports = { generateInterViewReportController, getInterviewReportByIdController, getAllInterviewReportsController, generateResumePdfController }
+module.exports = { generateInterViewReportController, getInterviewReportByIdController, getAllInterviewReportsController, generateResumePdfController,downloadOriginalResumeController }

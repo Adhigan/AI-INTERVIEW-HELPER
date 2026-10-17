@@ -72,6 +72,16 @@ const interviewReportSchema = new mongoose.Schema({
     resume: {
         type: String,
     },
+    
+    resumeBlobName: {
+        type: String,
+        default: null
+    },
+    resumeOriginalName: {
+        type: String,
+        default: null
+    },
+
     selfDescription: {
         type: String,
     },

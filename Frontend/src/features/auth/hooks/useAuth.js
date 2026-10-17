@@ -10,17 +10,27 @@ export const useAuth = () => {
     const { user, setUser, loading, setLoading } = context
 
 
-    const handleLogin = async ({ email, password }) => {
-        setLoading(true)
-        try {
-            const data = await login({ email, password })
-            setUser(data.user)
-        } catch (err) {
+    
+const handleLogin = async ({ email, password }) => {
+    setLoading(true);
 
-        } finally {
-            setLoading(false)
+    try {
+        const data = await login({ email, password });
+
+        if (!data?.user) {
+            throw new Error("Login response did not contain a user.");
         }
+
+        setUser(data.user);
+        return true;
+    } catch (err) {
+        setUser(null);
+        throw err;
+    } finally {
+        setLoading(false);
     }
+}
+
 
     const handleRegister = async ({ username, email, password }) => {
         setLoading(true)
@@ -46,21 +56,28 @@ export const useAuth = () => {
         }
     }
 
-    useEffect(() => {
+ 
+useEffect(() => {
+    const getAndSetUser = async () => {
+        try {
+            const data = await getMe();
 
-        const getAndSetUser = async () => {
-            try {
-
-                const data = await getMe()
-                setUser(data.user)
-            } catch (err) { } finally {
-                setLoading(false)
+            if (!data?.user) {
+                setUser(null);
+                return;
             }
+
+            setUser(data.user);
+        } catch (error) {
+            setUser(null);
+        } finally {
+            setLoading(false);
         }
+    };
 
-        getAndSetUser()
+    getAndSetUser();
+}, [setUser, setLoading]);
 
-    }, [])
 
     return { user, loading, handleRegister, handleLogin, handleLogout }
 }

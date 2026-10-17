@@ -1,24 +1,79 @@
+import { useAuth } from '../../auth/hooks/useAuth'
 import React, { useState, useRef } from 'react'
 import "../style/home.scss"
 import { useInterview } from '../hooks/useinterview'
 import { useNavigate } from 'react-router'
 
 const Home = () => {
-
+   
     const { loading, generateReport,reports } = useInterview()
     const [ jobDescription, setJobDescription ] = useState("")
     const [ selfDescription, setSelfDescription ] = useState("")
+    const [error, setError] = useState("")
     const resumeInputRef = useRef()
 
     const navigate = useNavigate()
+     const { handleLogout } = useAuth()
 
-    const handleGenerateReport = async () => {
-        const resumeFile = resumeInputRef.current.files[ 0 ]
-            console.log("Resume:", resumeFile);
+ 
+const handleGenerateReport = async () => {
+    setError("");
 
-        const data = await generateReport({ jobDescription, selfDescription, resumeFile })
-        navigate(`/interview/${data._id}`)
+    const resumeFile = resumeInputRef.current?.files?.[0];
+
+  
+if (!jobDescription.trim()) {
+    setError("Please enter the job description.");
+    return;
+}
+
+if (!resumeFile && !selfDescription.trim()) {
+    setError("Please upload a resume or enter your self-description.");
+    return;
+}
+
+if (
+    resumeFile &&
+    (
+        resumeFile.type !== "application/pdf" ||
+        !resumeFile.name.toLowerCase().endsWith(".pdf")
+    )
+) {
+    setError("Please select a valid PDF resume.");
+    return;
+}
+
+if (resumeFile && resumeFile.size > 3 * 1024 * 1024) {
+    setError("The resume must be smaller than 3 MB.");
+    return;
+}
+
+
+    try {
+        const data = await generateReport({
+            jobDescription,
+            selfDescription,
+            resumeFile
+        });
+
+        if (data?._id) {
+            navigate(`/interview/${data._id}`);
+        } else {
+            setError("The interview report could not be generated.");
+        }
+    } catch (err) {
+        console.error(
+            "Interview generation error:",
+            err.response?.data || err.message
+        );
+
+        setError(
+            err.response?.data?.message ||
+            "Failed to generate the interview strategy. Check the backend terminal."
+        );
     }
+}
+
 
     if (loading) {
         return (
@@ -35,6 +90,22 @@ const Home = () => {
             <header className='page-header'>
                 <h1>Create Your Custom <span className='highlight'>Interview Plan</span></h1>
                 <p>Let our AI analyze the job requirements and your unique profile to build a winning strategy.</p>
+
+                <button
+        onClick={async () => {
+            try {
+                await handleLogout()
+                navigate('/login', { replace: true })
+            } catch (error) {
+                console.error('Logout failed:', error)
+            }
+        }}
+    >
+        Logout
+    </button>
+
+
+                
             </header>
 
             {/* Main Card */}
@@ -111,6 +182,15 @@ const Home = () => {
                         </div>
                     </div>
                 </div>
+
+
+{/* Error message */}
+{error && (
+    <p role="alert" style={{ color: "red", padding: "12px" }}>
+        {error}
+    </p>
+)}
+
 
                 {/* Card Footer */}
                 <div className='interview-card__footer'>
