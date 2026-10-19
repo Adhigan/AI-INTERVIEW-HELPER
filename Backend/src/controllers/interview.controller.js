@@ -68,51 +68,47 @@ async function generateInterViewReportController(req, res) {
     let blobName = null;
 
     try {
-        if (!req.file) {
-            return res.status(400).json({
-                message: "No resume file received."
-            });
-        }
-
-        // Verify the PDF file signature.
-        if (
-            req.file.buffer.subarray(0, 5).toString() !== "%PDF-"
-        ) {
-            return res.status(400).json({
-                message: "The uploaded file is not a valid PDF."
-            });
-        }
-
         const { selfDescription, jobDescription } = req.body;
 
-if (!jobDescription?.trim()) {
-    return res.status(400).json({
-        message: "Job description is required."
-    });
-}
+        if (!jobDescription?.trim()) {
+            return res.status(400).json({
+                message: "Job description is required."
+            });
+        }
 
-if (!req.file && !selfDescription?.trim()) {
-    return res.status(400).json({
-        message: "Please upload a resume or enter your self-description."
-    });
-}
+        if (!req.file && !selfDescription?.trim()) {
+            return res.status(400).json({
+                message: "Please upload a resume or enter your self-description."
+            });
+        }
 
-        // 1. Store the original PDF in Azure Blob Storage.
-        blobName = await uploadResume(
-            req.file.buffer,
-            req.file.originalname
-        );
+        let resumeText = "";
 
-        // 2. Extract the PDF text using the existing logic.
-        const resumeContent = await (
-            new pdfParse.PDFParse(
-                Uint8Array.from(req.file.buffer)
-            )
-        ).getText();
+        if (req.file) {
+            // Verify the PDF file signature (magic bytes).
+            if (req.file.buffer.subarray(0, 5).toString() !== "%PDF-") {
+                return res.status(400).json({
+                    message: "The uploaded file is not a valid PDF."
+                });
+            }
 
-        // 3. Keep the existing Gemini workflow unchanged.
+            // 1. Store the original PDF in Azure Blob Storage.
+            blobName = await uploadResume(
+                req.file.buffer,
+                req.file.originalname
+            );
+
+            // 2. Extract the PDF text.
+            const parsed = await (
+                new pdfParse.PDFParse(Uint8Array.from(req.file.buffer))
+            ).getText();
+
+            resumeText = parsed.text;
+        }
+
+        // 3. Ask Gemini for the report.
         const interViewReportByAi = await generateInterviewReport({
-            resume: resumeContent.text,
+            resume: resumeText,
             selfDescription,
             jobDescription
         });
@@ -120,9 +116,9 @@ if (!req.file && !selfDescription?.trim()) {
         // 4. Save report data and Azure file metadata in MongoDB.
         const interviewReport = await interviewReportModel.create({
             user: req.user.id,
-            resume: resumeContent.text,
+            resume: resumeText,
             resumeBlobName: blobName,
-            resumeOriginalName: req.file.originalname,
+            resumeOriginalName: req.file ? req.file.originalname : null,
             selfDescription,
             jobDescription,
             ...interViewReportByAi
@@ -134,6 +130,7 @@ if (!req.file && !selfDescription?.trim()) {
         });
 
     } catch (error) {
+        
         console.error(
             "Interview report generation failed:",
             error.message
@@ -197,26 +194,37 @@ async function getAllInterviewReportsController(req, res) {
  * @description Controller to generate resume PDF based on user self description, resume and job description.
  */
 async function generateResumePdfController(req, res) {
-    const { interviewReportId } = req.params
+    try {
+        const { interviewReportId } = req.params
 
-    const interviewReport = await interviewReportModel.findById(interviewReportId)
+        // Only the owner of the report may generate a PDF from it.
+        const interviewReport = await interviewReportModel.findOne({
+            _id: interviewReportId,
+            user: req.user.id
+        })
 
-    if (!interviewReport) {
-        return res.status(404).json({
-            message: "Interview report not found."
+        if (!interviewReport) {
+            return res.status(404).json({
+                message: "Interview report not found."
+            })
+        }
+
+        const { resume, jobDescription, selfDescription } = interviewReport
+
+        const pdfBuffer = await generateResumePdf({ resume, jobDescription, selfDescription })
+
+        res.set({
+            "Content-Type": "application/pdf",
+            "Content-Disposition": `attachment; filename=resume_${interviewReportId}.pdf`
+        })
+
+        return res.send(pdfBuffer)
+    } catch (error) {
+        console.error("Resume PDF generation failed:", error.message)
+        return res.status(500).json({
+            message: "Failed to generate the resume PDF."
         })
     }
-
-    const { resume, jobDescription, selfDescription } = interviewReport
-
-    const pdfBuffer = await generateResumePdf({ resume, jobDescription, selfDescription })
-
-    res.set({
-        "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename=resume_${interviewReportId}.pdf`
-    })
-
-    res.send(pdfBuffer)
 }
 
 module.exports = { generateInterViewReportController, getInterviewReportByIdController, getAllInterviewReportsController, generateResumePdfController,downloadOriginalResumeController }

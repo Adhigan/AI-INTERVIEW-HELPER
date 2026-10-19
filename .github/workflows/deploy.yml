@@ -25,7 +25,7 @@ jobs:
 
       - name: Install backend dependencies
         working-directory: Backend
-        run: npm install
+        run: npm ci --omit=dev
 
       - name: Login to Azure
         uses: azure/login@v2
@@ -39,3 +39,8 @@ jobs:
         with:
           app-name: adithyan-ai-interview-helper
           package: ./Backend
+
+      - name: Smoke test
+        run: |
+          sleep 30
+          curl --fail --silent https://adithyan-ai-interview-helper-dvc7gxafh0hmezg0.uaenorth-01.azurewebsites.net/health

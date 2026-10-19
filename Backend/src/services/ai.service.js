@@ -31,6 +31,24 @@ const interviewReportSchema = z.object({
     title: z.string().describe("The title of the job for which the interview report is generated"),
 })
 
+// Retry a function a few times with a growing delay (bounded retries).
+async function withRetry(fn, attempts = 3) {
+    let lastError
+    for (let i = 1; i <= attempts; i++) {
+        try {
+            return await fn()
+        } catch (err) {
+            lastError = err
+            console.error(`Gemini attempt ${i} failed:`, err.message)
+            if (i < attempts) {
+                await new Promise(resolve => setTimeout(resolve, 1000 * i))
+            }
+        }
+    }
+    throw lastError
+}
+
+
 async function generateInterviewReport({ resume, selfDescription, jobDescription }) {
 
 const prompt = `
@@ -92,20 +110,15 @@ Job Description:
 ${jobDescription}
 `;
 
-const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: prompt,
-    config: {
-    responseMimeType: "application/json"
-}
-})
- console.log("Gemini Response:");
-    console.log(response.text);   
-    const report = JSON.parse(response.text)
+    return await withRetry(async () => {
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: { responseMimeType: "application/json" }
+        })
 
-return interviewReportSchema.parse(report)
-
-
+        return interviewReportSchema.parse(JSON.parse(response.text))
+    })
 }
 
 
@@ -150,25 +163,17 @@ async function generateResumePdf({ resume, selfDescription, jobDescription }) {
 
 
 
-    const response = await ai.models.generateContent({
-       model: "gemini-2.5-flash",
-        contents: prompt,
-        config: {
-            responseMimeType: "application/json",
-           
-        }
+       const validatedContent = await withRetry(async () => {
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: { responseMimeType: "application/json" }
+        })
+
+        return resumePdfSchema.parse(JSON.parse(response.text))
     })
 
-    console.log("Gemini Response:");
-console.log(response.text);
-
-
-  const jsonContent = JSON.parse(response.text)
-
-const validatedContent = resumePdfSchema.parse(jsonContent)
-
-const pdfBuffer = await generatePdfFromHtml(validatedContent.html)
-
+    const pdfBuffer = await generatePdfFromHtml(validatedContent.html)
     return pdfBuffer
 
 }
