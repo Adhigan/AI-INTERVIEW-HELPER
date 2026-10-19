@@ -1,7 +1,7 @@
 import { useAuth } from '../../auth/hooks/useAuth'
 import React, { useState, useRef } from 'react'
 import "../style/home.scss"
-import { useInterview } from '../hooks/useinterview'
+import { useInterview } from '../hooks/useInterview'
 import { useNavigate } from 'react-router'
 
 const Home = () => {
